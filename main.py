@@ -1,19 +1,22 @@
-'''
+"""
 Created on Apr 17, 2012
 
 @author: Erik Bjareholt
-'''
+"""
 
 from math import sqrt
 import re
 import platform
+import itertools
 
+import numpy as np
 import pygame
 from pygame.locals import *
 
 import worlds
 import entities
 import gui
+import constants
 
 
 class Main:
@@ -30,39 +33,42 @@ class Main:
         
         
 class Engine:
-    def __init__(self):
-        print("Hello, master. Gravity and Acceleration Logitizer 9000 at your service.\n" + 
-              "Name: GAL9000 | Health: I'm great thank you.\n" +
-              "Python Version: " + platform.python_version() + " | PyGame Version: " + pygame.ver)
-        while True:
-            answer = raw_input("\nPick a resolution:\n" +
-                               "1 - 512*512*32\n" +
-                               "2 - 1024*1024*32\n" +
-                               "3 - 1680*1050*32 Fullscreen\n" +
-                               "Choice: ")
-            if answer == "1":
-                self.mode = [(512,512), 0, 32]
-                break
-            if answer == "2":
-                self.mode = [(1024,1024), 0, 32]
-                break
-            if answer == "3":
-                self.mode = [(1680,1050), pygame.FULLSCREEN, 32]
-                break
+    def __init__(self, auto=True):
+        if auto:
+            self.mode = [(512, 512), 0, 32]
+        else:
+            print("Hello, master. Gravity and Acceleration Logitizer 9000 at your service.\n" +
+                  "Name: GAL9000 | Health: I'm great thank you.\n" +
+                  "Python Version: " + platform.python_version() + " | PyGame Version: " + pygame.ver)
+            while True:
+                answer = raw_input("\nPick a resolution:\n" +
+                                   "1 - 512*512*32\n" +
+                                   "2 - 1024*1024*32\n" +
+                                   "3 - 1680*1050*32 Fullscreen\n" +
+                                   "Choice: ")
+                if answer == "1":
+                    self.mode = [(512, 512), 0, 32]
+                    break
+                if answer == "2":
+                    self.mode = [(1024, 1024), 0, 32]
+                    break
+                if answer == "3":
+                    self.mode = [(1680, 1050), pygame.FULLSCREEN, 32]
+                    break
         self.screen = pygame.display.set_mode(self.mode[0], self.mode[1], self.mode[2])
         self.activity = gui.HUD(self.mode[0])
         self.fpsLimit = 10000
         
         self.background = pygame.Surface(self.mode[0])
-        self.background.fill((0,0,0))
+        self.background.fill((0, 0, 0))
         
         self.clock = pygame.time.Clock()
         self.drawGUI()
         
         self.entities = entities.EntityHandler()
-        self.load()
+        self.load(auto=auto)
         
-        self.cycleInterval = 15 # Time between physics cycles, in ms.
+        self.cycleInterval = 15   # Time between physics cycles, in ms.
         
         pygame.time.set_timer(pygame.USEREVENT + 1, self.cycleInterval)
         pygame.time.set_timer(pygame.USEREVENT + 2, 250)
@@ -72,19 +78,18 @@ class Engine:
     def render(self):
         if self.waitForInput:
             self.command()
-        self.screen.blit(self.background, (0,0))
-        for entityKey in self.entities.entities.keys():
-            # pos = self.entities[entityKey].getPosition()
-            pos = self.entities[entityKey].getPosition()
-            pos[0] = pos[0] + (self.mode[0][0]/2)
-            pos[1] = pos[1] + (self.mode[0][1]/2)
+        self.screen.blit(self.background, (0, 0))
+        for entityKey in self.entities.keys():
+            pos = self.entities[entityKey].getPos()
+            pos[0] += self.mode[0][0]/2
+            pos[1] += self.mode[0][1]/2
             self.screen.blit(self.entities[entityKey].surface, pos)
         self.renderGUI()
         self.clock.tick(self.fpsLimit)
         return self.screen
     
     def renderGUI(self):
-        self.screen.blit(self.gui, (0,0))
+        self.screen.blit(self.gui, (0, 0))
     
     def drawGUI(self):
         self.gui = self.activity.draw(self.clock.get_fps())
@@ -115,7 +120,7 @@ class Engine:
                 Planned:
                     Clears entities matching a criteria.
             """
-            for entityKey in self.entities.entities.keys():
+            for entityKey in self.entities.keys():
                 del self.entities[entityKey]
             print("Cleared world of all entities!")
             
@@ -129,7 +134,7 @@ class Engine:
                     Sort the list by name, radius, mass etc.
                     Possibility to choose level of data with a parameter.
             """
-            for entityKey in self.entities.entities.keys():
+            for entityKey in self.entities.keys():
                 className = self.entities[entityKey].__class__.__name__
                 print("Name: {0}, Type: {1}, Weight: {2}\nPosition: {3}\nForce: ({4}, {5})".format(entityKey, className, self.entities[entityKey].mass, 
                                                                                  self.entities[entityKey].pos,
@@ -196,60 +201,64 @@ class Engine:
             a far higher degree of accuracy.
         """
         self.deletionQue = []
+        newEntities = entities.EntityHandler()
         timePerSec = self.timeMult*self.cycleInterval/1000
-        for entityKey in self.entities.entities.keys():
-            self.entities[entityKey].applyAcceleration(timePerSec)
-            for affectorKey in self.entities.entities.keys():
-                if entityKey != affectorKey:
-                    entityPos = self.entities[entityKey].getCenter()
-                    affectorPos = self.entities[affectorKey].getCenter()
-                    dX = affectorPos[0] - entityPos[0]
-                    dY = affectorPos[1] - entityPos[1]
-                    distance = sqrt((dX**2) + (dY**2))
-                    radius = self.entities[entityKey].radius + self.entities[affectorKey].radius
-                    
-                    collision = self.sphereCollision(radius, distance, entityKey, affectorKey)
-                    if not collision:
-                        force = self.entities[entityKey].applyGravity(self.entities[affectorKey].mass, (distance, dX, dY), timePerSec)
-                        if force:
-                            self.entities[affectorKey].applyForce(-force[0]/timePerSec, -force[1]/timePerSec)
-            
-        for key in self.deletionQue:
-            del self.entities[key]
-    
-    def sphereCollision(self, radius, distance, entityKey, affectorKey):
+
+        for e in self.entities.values():
+            e.applyAcceleration(timePerSec)
+
+        for e1, e2 in itertools.combinations(self.entities.values(), 2):
+            dxy = e1.getPos() - e2.getPos()
+            distance = sqrt(sum(np.power(dxy, 2)))
+            radiusSum = e1.radius + e2.radius
+
+            collision = self.sphereCollision(e1, e2, radiusSum, distance)
+            if not collision:
+                force = self.calcGravity(e1, e2, distance, dxy, timePerSec)
+                e1.applyForce(-force)
+                e2.applyForce(force)
+                newEntities.add(e1)
+                newEntities.add(e2)
+
+        #for entity in self.entities.values():
+        #    if entity not in self.deletionQue:
+        #        newEntities.add(entity)
+        #    else:
+        #        print("Deleted {}".format(entity))
+        self.entities = newEntities
+
+    def calcGravity(self, e1, e2, distance, dxy, timePerSec):
+        force = constants.G * (e1.mass*e2.mass/distance**2) * timePerSec * np.transpose(np.array((dxy[0], dxy[1])))
+        print(force)
+        return force
+
+    def sphereCollision(self, e1, e2, radius, distance):
         if radius > distance:
-            if entityKey not in self.deletionQue and affectorKey not in self.deletionQue:
-                if self.entities[entityKey].mass > self.entities[affectorKey].mass:
-                    keepKey = entityKey
-                    deleteKey = affectorKey
+            print("Collision! ({}, {}) ({}, {})".format(radius, distance, e1, e2))
+            if (e1 not in self.deletionQue) and (e2 not in self.deletionQue):
+                if e1.mass > e2.mass:
+                    self.deletionQue.append(e2)
                 else:
-                    keepKey = affectorKey
-                    deleteKey = entityKey
-                self.entities[keepKey] += self.entities[deleteKey]
-                self.deletionQue.append(deleteKey)
+                    self.deletionQue.append(e1)
             return True
         return False
     
-    def load(self, loadWorld=None):
-        if not loadWorld:
+    def load(self, auto=False):
+        if auto:
+            loadWorld = 0
+        else:
             print("\nAvailable worlds")
-            listNo = 1
-            for worldKey in worlds.worlds.keys():
-                print("{0} - {1}".format(listNo, worldKey))
-                listNo += 1
+            for i, world in enumerate(worlds.worlds):
+                print("{0} - {1}".format(i, world.name))
             loadWorld = raw_input("World: ")
             self.command("clear")
         try:
-            loadWorld = worlds.worlds[worlds.worlds.keys()[int(loadWorld)-1]]
+            loadWorld = worlds.worlds[int(loadWorld)]
         except:
-            if loadWorld in worlds.worlds.keys():
-                loadWorld = worlds.worlds[loadWorld]
-            else:
-                print("World {0} could not be found. None loaded.".format(loadWorld))
-                self.timeMult = 10**7
-                loadWorld = None
-    
+            print("World {0} could not be found. None loaded.".format(loadWorld))
+            self.timeMult = 10**7
+            loadWorld = None
+
         if loadWorld:
             self.timeMult = loadWorld.timeMult
             for entity in loadWorld:
@@ -277,7 +286,7 @@ def handle():
         elif event.type == MOUSEBUTTONDOWN:
             worldPos = (event.pos[0]-engine.mode[0][0]/2, event.pos[1]-engine.mode[0][1]/2)
             if event.button == 1:
-                engine.entities.add(entities.Planet(worldPos, 1, 1), debug=True)
+                engine.entities.add(entities.Planet(pos=np.array(worldPos), radius=1, mass=1), debug=True)
             elif event.button == 3:
                 print("Mousebutton 3 clicked the world at: {0}".format(worldPos))
         elif event.type == QUIT:
