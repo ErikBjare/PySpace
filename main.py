@@ -229,7 +229,6 @@ class Engine:
 
     def calcGravity(self, e1, e2, distance, dxy, timePerSec):
         force = constants.G * (e1.mass*e2.mass/distance**2) * timePerSec * np.transpose(np.array((dxy[0], dxy[1])))
-        print(force)
         return force
 
     def sphereCollision(self, e1, e2, radius, distance):
